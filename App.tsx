@@ -1,21 +1,11 @@
+import React, {useRef, useState} from 'react';
 
-import React, { useRef, useState } from 'react';
+import {Alert, ActivityIndicator, View, Text, Modal} from 'react-native';
 
-import {
-  Alert,
-  ActivityIndicator,
-  View,
-  Text,
-  Modal,
-} from 'react-native';
+import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 
-import {
-  SafeAreaProvider,
-  SafeAreaView,
-} from 'react-native-safe-area-context';
-
-import { Service } from './Vreni/src/types/Service';
-import { CheckoutBill } from './Vreni/src/types/Order';
+import {Service} from './Vreni/src/types/Service';
+import {CheckoutBill, Order} from './Vreni/src/types/Order';
 
 import ServicesScreen from './Vreni/src/screens/ServicesScreen';
 import BillScreen from './Vreni/src/screens/BillScreen';
@@ -23,19 +13,16 @@ import CheckoutScreen from './Vreni/src/screens/CheckoutScreen';
 import PaymentQrScreen from './Vreni/src/screens/PaymentQrScreen';
 import HistoryScreen from './Vreni/src/screens/HistoryScreen';
 
-import { useOrderHistory } from './Vreni/src/hooks/useOrderHistory';
+import {useOrderHistory} from './Vreni/src/hooks/useOrderHistory';
 
 type Screen = 'services' | 'bill' | 'checkout' | 'payment' | 'history';
 
 const App: React.FC = () => {
-  const [currentScreen, setCurrentScreen] =
-    useState<Screen>('services');
+  const [currentScreen, setCurrentScreen] = useState<Screen>('services');
 
-  const [selectedServices, setSelectedServices] =
-    useState<Service[]>([]);
+  const [selectedServices, setSelectedServices] = useState<Service[]>([]);
 
-  const [checkoutBill, setCheckoutBill] =
-    useState<CheckoutBill | null>(null);
+  const [checkoutBill, setCheckoutBill] = useState<CheckoutBill | null>(null);
 
   const [isOpeningBill, setIsOpeningBill] = useState(false);
   const [hasOpenedBill, setHasOpenedBill] = useState(false);
@@ -43,14 +30,24 @@ const App: React.FC = () => {
   // New: Home screen history popup visibility
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
-  const openingBillRef = useRef(false);
+  const [resumedOrderId, setResumedOrderId] = useState<string | null>(null);
 
-  const {
-    orders,
-    isLoading,
-    isSaving,
-    saveOrder,
-  } = useOrderHistory();
+  const openingBillRef = useRef(false);
+  const savingForLaterRef = useRef(false);
+  const savedForLaterBillRef = useRef<CheckoutBill | null>(null);
+  const confirmingPaymentRef = useRef(false);
+
+  const {orders, isLoading, isSaving, saveOrder, updateOrderPaymentStatus} =
+    useOrderHistory();
+
+  const clearCheckoutState = () => {
+    setCheckoutBill(null);
+    setSelectedServices([]);
+    setHasOpenedBill(false);
+    setIsOpeningBill(false);
+    openingBillRef.current = false;
+    setShowHistoryModal(false);
+  };
 
   // Open Total Bill after 500 ms
   const handleConfirmServices = (items: Service[]) => {
@@ -71,6 +68,7 @@ const App: React.FC = () => {
 
   // Open Checkout
   const handleCheckout = (bill: CheckoutBill) => {
+    setResumedOrderId(null);
     setCheckoutBill(bill);
     setCurrentScreen('checkout');
   };
@@ -85,24 +83,90 @@ const App: React.FC = () => {
     setCurrentScreen('payment');
   };
 
+  // Step 2: connected to the checkout UI in the next increment.
+  const handleSaveForLater = async () => {
+    if (
+      !checkoutBill ||
+      isSaving ||
+      savingForLaterRef.current ||
+      savedForLaterBillRef.current === checkoutBill ||
+      resumedOrderId !== null
+    )
+      return;
+
+    const bill = checkoutBill;
+    savingForLaterRef.current = true;
+    try {
+      const success = await saveOrder(bill, 'PENDING_PAYMENT');
+      if (!success) throw new Error('Order persistence failed');
+
+      savedForLaterBillRef.current = bill;
+      clearCheckoutState();
+      setCurrentScreen('history');
+      Alert.alert(
+        'Success',
+        'Order saved for later. Payment is still pending.',
+      );
+    } catch {
+      Alert.alert('Error', 'Unable to save order. Please try again.');
+    } finally {
+      savingForLaterRef.current = false;
+    }
+  };
+
+  const handleResumePendingOrder = (order: Order) => {
+    if (order.paymentStatus !== 'PENDING_PAYMENT') {
+      Alert.alert('Error', 'Only pending orders can be resumed.');
+      return;
+    }
+
+    const bill: CheckoutBill = {
+      customerName: order.customerName,
+      phoneNumber: order.phoneNumber,
+      items: order.items.map(item => ({...item})),
+      totalAmount: order.totalAmount,
+    };
+
+    setResumedOrderId(order.id);
+    setCheckoutBill(bill);
+    setSelectedServices([]);
+    setHasOpenedBill(false);
+    setIsOpeningBill(false);
+    openingBillRef.current = false;
+    setShowHistoryModal(false);
+    setCurrentScreen('checkout');
+  };
+
+  const handleResumedCheckoutBack = () => {
+    setResumedOrderId(null);
+    setCheckoutBill(null);
+    setCurrentScreen('history');
+  };
+
   // Confirm payment manually and save order
   const handlePaymentConfirmed = async () => {
-    if (!checkoutBill || isSaving) return;
+    if (!checkoutBill || isSaving || confirmingPaymentRef.current) {
+      return;
+    }
 
-    const success = await saveOrder(checkoutBill);
+    confirmingPaymentRef.current = true;
 
-    if (success) {
-      setCheckoutBill(null);
-      setSelectedServices([]);
-      setHasOpenedBill(false);
-      setCurrentScreen('history');
+    try {
+      const success = resumedOrderId
+        ? await updateOrderPaymentStatus(resumedOrderId)
+        : await saveOrder(checkoutBill, 'PAYMENT_CONFIRMED');
 
-      Alert.alert('Success', 'Payment confirmed and order saved.');
-    } else {
-      Alert.alert(
-        'Error',
-        'Unable to save order. Please try again.',
-      );
+      if (success) {
+        clearCheckoutState();
+        setResumedOrderId(null);
+        setCurrentScreen('history');
+
+        Alert.alert('Success', 'Payment confirmed and order saved.');
+      } else {
+        Alert.alert('Error', 'Unable to save order. Please try again.');
+      }
+    } finally {
+      confirmingPaymentRef.current = false;
     }
   };
 
@@ -113,8 +177,7 @@ const App: React.FC = () => {
           flex: 1,
           backgroundColor: '#FFFFFF',
         }}
-        edges={['top', 'bottom']}
-      >
+        edges={['top', 'bottom']}>
         {/* Services Screen */}
         {currentScreen === 'services' && (
           <ServicesScreen
@@ -129,8 +192,7 @@ const App: React.FC = () => {
             style={{
               flex: 1,
               display: currentScreen === 'bill' ? 'flex' : 'none',
-            }}
-          >
+            }}>
             <BillScreen
               services={selectedServices}
               isVisible={currentScreen === 'bill'}
@@ -147,8 +209,14 @@ const App: React.FC = () => {
         {currentScreen === 'checkout' && checkoutBill && (
           <CheckoutScreen
             bill={checkoutBill}
-            onBack={() => setCurrentScreen('bill')}
+            onBack={
+              resumedOrderId
+                ? handleResumedCheckoutBack
+                : () => setCurrentScreen('bill')
+            }
             onProceedToPayment={handleProceedToPayment}
+            onSaveForLater={resumedOrderId ? undefined : handleSaveForLater}
+            isSaving={isSaving}
           />
         )}
 
@@ -168,6 +236,7 @@ const App: React.FC = () => {
             orders={orders}
             isLoading={isLoading}
             onBack={() => setCurrentScreen('services')}
+            onProceedToCheckout={handleResumePendingOrder}
           />
         )}
 
@@ -176,8 +245,7 @@ const App: React.FC = () => {
           visible={showHistoryModal}
           transparent
           animationType="fade"
-          onRequestClose={() => setShowHistoryModal(false)}
-        >
+          onRequestClose={() => setShowHistoryModal(false)}>
           <View
             style={{
               flex: 1,
@@ -185,8 +253,7 @@ const App: React.FC = () => {
               justifyContent: 'center',
               alignItems: 'center',
               padding: 12,
-            }}
-          >
+            }}>
             <View
               style={{
                 width: '100%',
@@ -195,12 +262,12 @@ const App: React.FC = () => {
                 borderRadius: 14,
                 overflow: 'hidden',
                 elevation: 10,
-              }}
-            >
+              }}>
               <HistoryScreen
                 orders={orders}
                 isLoading={isLoading}
                 onBack={() => setShowHistoryModal(false)}
+                onProceedToCheckout={handleResumePendingOrder}
               />
             </View>
           </View>
@@ -219,12 +286,8 @@ const App: React.FC = () => {
               justifyContent: 'center',
               alignItems: 'center',
               zIndex: 999,
-            }}
-          >
-            <ActivityIndicator
-              size="large"
-              color="#7C3AED"
-            />
+            }}>
+            <ActivityIndicator size="large" color="#7C3AED" />
 
             <Text
               style={{
@@ -232,8 +295,7 @@ const App: React.FC = () => {
                 fontSize: 15,
                 color: '#333333',
                 fontWeight: '600',
-              }}
-            >
+              }}>
               Preparing Total Bill...
             </Text>
           </View>
@@ -244,50 +306,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
-
-//// PROJ CODE ABV /////
-
-
-
-
-
-// import React from 'react';
-// import {
-//   SafeAreaView,
-//   StatusBar,
-//   StyleSheet,
-// } from 'react-native';
-// import PaymentQrScreen from './Vreni/src/screens/PaymentQrScreen';
-
-
-
-// const App: React.FC = () => {
-//   const handleBack = () => {
-//     console.log('Back button pressed');
-//   };
-
-//   return (
-//     <SafeAreaView style={styles.container}>
-//       <StatusBar
-//         backgroundColor="#f8fafc"
-//         barStyle="dark-content"
-//       />
-
-//       <PaymentQrScreen
-//         amount={10}
-//         onBack={handleBack}
-//       />
-//     </SafeAreaView>
-//   );
-// };
-
-// export default App;
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: '#f8fafc',
-//   },
-// });
-

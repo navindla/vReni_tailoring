@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 import {
@@ -9,21 +8,32 @@ import {
   StyleSheet,
 } from 'react-native';
 
-import { CheckoutBill } from '../types/Order';
+import {CheckoutBill} from '../types/Order';
 
 interface Props {
   bill: CheckoutBill;
   onBack: () => void;
   onProceedToPayment: () => void;
+  onSaveForLater?: () => void;
+  isSaving?: boolean;
 }
 
 const CheckoutScreen: React.FC<Props> = ({
   bill,
   onBack,
   onProceedToPayment,
+  onSaveForLater,
+  isSaving = false,
 }) => {
-  const formatPrice = (price: number) =>
-    `₹${price.toLocaleString('en-IN')}`;
+  const saveDisabled = isSaving || !onSaveForLater;
+  const actionLayout = {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 6,
+    justifyContent: 'center',
+  } as const;
+
+  const formatPrice = (price: number) => `₹${price.toLocaleString('en-IN')}`;
 
   const totalQuantity = bill.items.reduce(
     (total, item) => total + item.quantity,
@@ -39,7 +49,7 @@ const CheckoutScreen: React.FC<Props> = ({
 
         <Text style={styles.headerTitle}>Checkout</Text>
 
-        <View style={{ width: 55 }} />
+        <View style={{width: 55}} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -50,26 +60,17 @@ const CheckoutScreen: React.FC<Props> = ({
           <Text style={styles.value}>{bill.customerName}</Text>
 
           <Text style={styles.label}>Phone Number</Text>
-          <Text style={styles.value}>
-            {bill.phoneNumber || 'Not provided'}
-          </Text>
+          <Text style={styles.value}>{bill.phoneNumber || 'Not provided'}</Text>
         </View>
 
         <Text style={styles.sectionTitle}>Bill Items</Text>
 
         {bill.items.map((item, index) => (
-          <View
-            key={`${item.serviceId}-${index}`}
-            style={styles.itemCard}
-          >
+          <View key={`${item.serviceId}-${index}`} style={styles.itemCard}>
             <View style={styles.itemTop}>
-              <Text style={styles.itemName}>
-                {item.serviceName}
-              </Text>
+              <Text style={styles.itemName}>{item.serviceName}</Text>
 
-              <Text style={styles.itemAmount}>
-                {formatPrice(item.amount)}
-              </Text>
+              <Text style={styles.itemAmount}>{formatPrice(item.amount)}</Text>
             </View>
 
             <Text style={styles.itemDetails}>
@@ -96,14 +97,44 @@ const CheckoutScreen: React.FC<Props> = ({
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, {flexDirection: 'row', gap: 10}]}>
         <TouchableOpacity
-          style={styles.confirmButton}
+          style={[
+            styles.confirmButton,
+            actionLayout,
+            {
+              backgroundColor: '#FFFFFF',
+              borderWidth: 1,
+              borderColor: '#7C3AED',
+            },
+            saveDisabled && {opacity: 0.5},
+          ]}
+          onPress={onSaveForLater}
+          disabled={saveDisabled}
+          accessibilityRole="button"
+          accessibilityState={{disabled: saveDisabled}}
+          activeOpacity={0.8}>
+          <Text
+            style={[
+              styles.confirmText,
+              {color: '#7C3AED', textAlign: 'center'},
+            ]}>
+            SAVE FOR LATER
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.confirmButton,
+            actionLayout,
+            isSaving && {opacity: 0.5},
+          ]}
           onPress={onProceedToPayment}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.confirmText}>
-            Proceed to Payment
+          disabled={isSaving}
+          accessibilityRole="button"
+          accessibilityState={{disabled: isSaving}}
+          activeOpacity={0.8}>
+          <Text style={[styles.confirmText, {textAlign: 'center'}]}>
+            PROCEED TO PAYMENT
           </Text>
         </TouchableOpacity>
       </View>

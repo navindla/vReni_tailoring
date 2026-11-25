@@ -1,6 +1,4 @@
-
-
-import React, { useState } from 'react';
+import React, {useState} from 'react';
 import {
   View,
   Text,
@@ -10,24 +8,24 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-import { Order } from '../types/Order';
+import {Order} from '../types/Order';
 
 interface Props {
   orders: Order[];
   isLoading: boolean;
   onBack: () => void;
+  onProceedToCheckout?: (order: Order) => void;
 }
 
 const HistoryScreen: React.FC<Props> = ({
   orders,
   isLoading,
   onBack,
+  onProceedToCheckout,
 }) => {
-  const [expandedOrderId, setExpandedOrderId] =
-    useState<string | null>(null);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
-  const formatPrice = (price: number) =>
-    `₹${price.toLocaleString('en-IN')}`;
+  const formatPrice = (price: number) => `₹${price.toLocaleString('en-IN')}`;
 
   const formatDate = (date: string) =>
     new Date(date).toLocaleString('en-IN', {
@@ -46,13 +44,13 @@ const HistoryScreen: React.FC<Props> = ({
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Order History</Text>
-        <View style={{ width: 55 }} />
+        <View style={{width: 55}} />
       </View>
 
       {isLoading ? (
         <ActivityIndicator
           size="large"
-          style={{ marginTop: 40 }}
+          style={{marginTop: 40}}
           color="#16834A"
         />
       ) : orders.length === 0 ? (
@@ -64,9 +62,7 @@ const HistoryScreen: React.FC<Props> = ({
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.countText}>
-            Total Orders: {orders.length}
-          </Text>
+          <Text style={styles.countText}>Total Orders: {orders.length}</Text>
 
           {orders.map(order => {
             const expanded = expandedOrderId === order.id;
@@ -76,21 +72,51 @@ const HistoryScreen: React.FC<Props> = ({
                 <TouchableOpacity
                   onPress={() =>
                     setExpandedOrderId(expanded ? null : order.id)
-                  }
-                >
+                  }>
                   <View style={styles.orderTop}>
-                    <View style={{ flex: 1 }}>
+                    <View style={{flex: 1}}>
                       <Text style={styles.customerName}>
                         {order.customerName}
                       </Text>
 
-                      <Text style={styles.orderId}>
-                        {order.id}
-                      </Text>
+                      <Text style={styles.orderId}>{order.id}</Text>
                     </View>
 
                     <Text style={styles.orderTotal}>
                       {formatPrice(order.totalAmount)}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={{
+                      alignSelf: 'flex-start',
+                      backgroundColor:
+                        order.paymentStatus === 'PENDING_PAYMENT'
+                          ? '#FFF1CC'
+                          : order.paymentStatus === 'PAYMENT_CONFIRMED'
+                          ? '#DDF4E5'
+                          : '#EEEEEE',
+                      borderRadius: 12,
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      marginTop: 10,
+                    }}>
+                    <Text
+                      style={{
+                        color:
+                          order.paymentStatus === 'PENDING_PAYMENT'
+                            ? '#754700'
+                            : order.paymentStatus === 'PAYMENT_CONFIRMED'
+                            ? '#145C32'
+                            : '#333333',
+                        fontSize: 12,
+                        fontWeight: '600',
+                      }}>
+                      {order.paymentStatus === 'PENDING_PAYMENT'
+                        ? 'Pending'
+                        : order.paymentStatus === 'PAYMENT_CONFIRMED'
+                        ? 'Completed'
+                        : 'Status Unknown'}
                     </Text>
                   </View>
 
@@ -103,26 +129,30 @@ const HistoryScreen: React.FC<Props> = ({
                   </Text>
                 </TouchableOpacity>
 
+                {order.paymentStatus === 'PENDING_PAYMENT' &&
+                  onProceedToCheckout && (
+                    <TouchableOpacity
+                      style={styles.proceedButton}
+                      onPress={() => onProceedToCheckout(order)}>
+                      <Text style={styles.proceedButtonText}>PROCEED</Text>
+                    </TouchableOpacity>
+                  )}
+
                 {expanded && (
                   <View style={styles.details}>
-                    <Text style={styles.detailHeading}>
-                      Customer Details
-                    </Text>
+                    <Text style={styles.detailHeading}>Customer Details</Text>
 
                     <Text style={styles.detailText}>
                       Phone: {order.phoneNumber || 'Not provided'}
                     </Text>
 
-                    <Text style={styles.detailHeading}>
-                      Items
-                    </Text>
+                    <Text style={styles.detailHeading}>Items</Text>
 
                     {order.items.map((item, index) => (
                       <View
                         key={`${item.serviceId}-${index}`}
-                        style={styles.itemRow}
-                      >
-                        <View style={{ flex: 1 }}>
+                        style={styles.itemRow}>
+                        <View style={{flex: 1}}>
                           <Text style={styles.itemName}>
                             {item.serviceName}
                           </Text>
@@ -139,9 +169,7 @@ const HistoryScreen: React.FC<Props> = ({
                     ))}
 
                     <View style={styles.finalTotal}>
-                      <Text style={styles.detailHeading}>
-                        Grand Total
-                      </Text>
+                      <Text style={styles.detailHeading}>Grand Total</Text>
 
                       <Text style={styles.orderTotal}>
                         {formatPrice(order.totalAmount)}
@@ -224,6 +252,22 @@ const styles = StyleSheet.create({
     color: '#16834A',
     fontWeight: '600',
     marginTop: 12,
+  },
+  proceedButton: {
+    backgroundColor: 'transparent',
+    borderColor: '#16834A',
+    borderWidth: 1,
+    borderRadius: 6,
+    marginTop: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    alignSelf: 'center',
+  },
+  proceedButtonText: {
+    color: '#16834A',
+    fontWeight: '600',
+    fontSize: 13,
   },
   details: {
     borderTopWidth: 1,
